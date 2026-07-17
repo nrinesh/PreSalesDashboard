@@ -11,6 +11,8 @@ A self-contained, interactive dashboard for tracking Proof-of-Concept (POC) pipe
 - Charts the 25 longest-running in-scope POCs (respects the whole-dashboard filters below).
 - **"Consider Booking Only On/After"** date picker: when a date is set, POC Booked records whose Sales Order Date is earlier than that date (or blank) are removed from the dashboard entirely.
 - **Booking Date column** in the POC Detail table: shows the Sales Order Date for POCs whose status is "POC Booked" (blank for all other POCs). The companion workbook mirrors this as a "POC Booking Date" formula column (col T) on the POC Data sheet.
+- **Chart-local Stage filter** on the "POC Duration — Top 25 Longest Running" chart: a separate Stage multi-select above the chart that narrows only that chart, independent of the global Filter Whole Dashboard Stage filter. HTML dashboard only (no Excel equivalent).
+- **Duration-bucket drill-down**: clicking a Group or Stage row inside any of the "Number of POC by Duration Bucket, Grouped by Group" boxes filters the POC Detail table below to just that duration bucket (+ stage, if a stage row was clicked) and scrolls down to it. Use the "Clear Drill-down" button next to POC Detail, or change the Group Filter dropdown, to clear it. HTML dashboard only (no Excel equivalent).
 - Lets you **replace the data source** with a new `.xlsx` export directly in the browser (no rebuild needed).
 - Lets you **edit Validated Date / End Date** per POC via an Edit button — overrides are saved in the browser's local storage.
 - Lets you **filter the whole dashboard** by month (of Validated Date or End Date), and by Country, PM, BDM, and Stage — each supporting multiple selections at once via a checkbox dropdown.

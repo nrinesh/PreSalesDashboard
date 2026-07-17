@@ -79,6 +79,8 @@
   .bucket-widget table{font-size:12px;}
   .bucket-widget td, .bucket-widget th{padding:6px 12px;}
   .bucket-widget .stage-sub-row td{padding-left:22px; color:var(--muted); font-size:11px;}
+  .bucket-widget tbody tr[data-bucket]{cursor:pointer;}
+  .bucket-widget tbody tr[data-bucket]:hover td{background:#dbe7fb;}
   .bucket-0-60 .bucket-header{background:var(--green);}
   .bucket-61-90 .bucket-header{background:var(--amber);}
   .bucket-91plus .bucket-header{background:var(--red);}
@@ -244,7 +246,7 @@
 
 <div class="section">
   <h2>Number of POC by Duration Bucket, Grouped by Group</h2>
-  <div class="note">Duration = POC Validated Date &rarr; POC Standby Date (else POC Completed Date, else Manual Entry, else Current Date). Snapshot as of <span id="asOfDate2"></span>. Each widget breaks down by Group, with stage-level detail nested underneath.</div>
+  <div class="note">Duration = POC Validated Date &rarr; POC Standby Date (else POC Completed Date, else Manual Entry, else Current Date). Snapshot as of <span id="asOfDate2"></span>. Each widget breaks down by Group, with stage-level detail nested underneath. Click a Group or Stage row to drill down: it filters POC Detail below to just that bucket and scrolls you there.</div>
   <div class="bucket-grid">
     <div class="bucket-widget bucket-0-60">
       <div class="bucket-header">0 to 60 Days<span class="count" id="bucket060Count"></span></div>
@@ -263,7 +265,16 @@
 
 <div class="section">
   <h2>POC Duration — Top 25 Longest Running</h2>
-  <div class="note">Duration = POC Validated Date &rarr; POC Standby Date (else POC Completed Date, else Manual Entry, else Current Date). Snapshot as of <span id="asOfDate"></span>. Showing the 25 longest of <span id="inScopeCount"></span> in-scope POCs (after all whole-dashboard filters above, including the Stage filter).</div>
+  <div class="note">Duration = POC Validated Date &rarr; POC Standby Date (else POC Completed Date, else Manual Entry, else Current Date). Snapshot as of <span id="asOfDate"></span>. Showing the 25 longest of <span id="inScopeCount"></span> in-scope POCs (after all whole-dashboard filters above). Use the Stage filter below to narrow this chart only, without affecting the rest of the dashboard.</div>
+  <div class="filters" style="margin-bottom:14px;">
+    <div class="multiselect" id="ms_chartStage">
+      <button type="button" class="ms-toggle">All Stages &#9662;</button>
+      <div class="ms-panel">
+        <div class="ms-panel-actions"><a href="#" data-act="all">Select all</a><a href="#" data-act="none">Clear</a></div>
+        <div class="ms-options"></div>
+      </div>
+    </div>
+  </div>
   <div class="chart-box"><canvas id="durationChart"></canvas></div>
   <div class="legend-note">
     <span class="basis standby">Standby Date</span> reached POC Standby &nbsp;
@@ -273,11 +284,13 @@
   </div>
 </div>
 
-<div class="section">
+<div class="section" id="pocDetailSection">
   <h2>POC Detail</h2>
   <div class="filters">
     <select id="groupFilter"></select>
     <input type="text" id="searchBox" placeholder="Search project, customer, country...">
+    <span class="note" id="drillDownStatus" style="display:none; margin:0;"></span>
+    <button id="clearDrillDownBtn" class="btn btn-ghost btn-small" style="display:none;">Clear Drill-down</button>
   </div>
   <div class="table-wrap">
     <table id="detailTable">
@@ -355,6 +368,7 @@ const STORAGE_KEYS = {
   monthFilter: 'pocDashboard.monthFilter',
   extraFilters: 'pocDashboard.extraFilters',
   bookingDateFilter: 'pocDashboard.bookingDateFilter',
+  chartStageFilter: 'pocDashboard.chartStageFilter',
 };
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -385,6 +399,16 @@ let filterActive = { country: false, pm: false, bdm: false, stage: false };
 // is earlier than this date (or missing) are removed from the whole dashboard entirely --
 // not just filtered from view. Null means no restriction.
 let bookingDateFilter = loadJSON(STORAGE_KEYS.bookingDateFilter, null);
+// Widget-local Stage filter for the "POC Duration — Top 25 Longest Running" chart only.
+// Independent of extraFilters.stage (the global Filter Whole Dashboard stage filter) -- this
+// narrows just the chart without affecting cards, group/stage tables, buckets, or detail table.
+// null = not yet initialized (defaults to "all" once options are known); array = explicit selection.
+let chartStageFilter = loadJSON(STORAGE_KEYS.chartStageFilter, null);
+// Transient (not persisted) drill-down set by clicking a Group/Stage row inside a duration-bucket
+// widget. Filters the POC Detail table to just that duration bucket (+ stage, if a stage row was
+// clicked); the Group is applied via the existing groupFilter dropdown. Cleared via the
+// "Clear Drill-down" button or by picking a different Group Filter dropdown value.
+let detailDrillDown = null; // { bucket: 'b060'|'b6190'|'b91', stage: string|null } | null
 
 // ================= Date helpers =================
 function fmtDate(v){
@@ -623,9 +647,11 @@ function renderBuckets(){
       const groupTotal = Object.values(stages).reduce((a,b)=>a+b,0);
       total += groupTotal;
       const cls = groupClass(g);
-      rows += `<tr><td><span class="group-pill ${cls}">${g}</span></td><td><strong>${groupTotal}</strong></td></tr>`;
+      const groupAttrs = groupTotal > 0 ? ` data-bucket="${key}" data-group="${escapeHtml(g)}"` : '';
+      rows += `<tr${groupAttrs}><td><span class="group-pill ${cls}">${g}</span></td><td><strong>${groupTotal}</strong></td></tr>`;
       Object.entries(stages).sort((a,b)=>stageRank(a[0])-stageRank(b[0])).forEach(([stage,count]) => {
-        rows += `<tr class="stage-sub-row"><td>${stage}</td><td>${count}</td></tr>`;
+        const stageAttrs = count > 0 ? ` data-bucket="${key}" data-group="${escapeHtml(g)}" data-stage="${escapeHtml(stage)}"` : '';
+        rows += `<tr class="stage-sub-row"${stageAttrs}><td>${stage}</td><td>${count}</td></tr>`;
       });
     });
     document.getElementById(countId).textContent = total;
@@ -641,9 +667,11 @@ const basisColor = { 'POC Standby Date': '#2f9e44', 'POC Completed Date': '#2f6f
 let durationChartInstance = null;
 function renderChart(){
   document.getElementById('asOfDate').textContent = todayStr();
-  document.getElementById('inScopeCount').textContent = data.length;
+  // Widget-local Stage filter narrows just this chart's pool, on top of the whole-dashboard `data`.
+  const chartScoped = data.filter(d => matchesMulti(d.Stage, chartStageFilter));
+  document.getElementById('inScopeCount').textContent = chartScoped.length;
 
-  const sorted = [...data].sort((a,b) => b.DurationDays - a.DurationDays).slice(0, 25);
+  const sorted = [...chartScoped].sort((a,b) => b.DurationDays - a.DurationDays).slice(0, 25);
 
   if (durationChartInstance) durationChartInstance.destroy();
   durationChartInstance = new Chart(document.getElementById('durationChart'), {
@@ -695,6 +723,12 @@ function renderDetail(){
   const groupVal = groupFilterEl.value;
   const q = document.getElementById('searchBox').value.toLowerCase();
   let rows = data.filter(d => (groupVal === 'All Groups' || d.Group === groupVal));
+  // Duration-bucket drill-down (set by clicking a Group/Stage row in the bucket widgets above):
+  // narrows further to just that duration bucket, and to a specific stage if a stage row was clicked.
+  if (detailDrillDown) {
+    rows = rows.filter(d => bucketOf(d.DurationDays) === detailDrillDown.bucket
+      && (!detailDrillDown.stage || d.Stage === detailDrillDown.stage));
+  }
   if (q) {
     rows = rows.filter(d =>
       (d['Project Name']||'').toLowerCase().includes(q) ||
@@ -801,6 +835,96 @@ function renderGlobalFilterOptions(){
   filterActive.stage = renderMultiSelect('stage', stages, 'All Stages');
 }
 
+// ================= Chart-local Stage filter (Top 25 Longest Running only) =================
+// Mirrors the shape of renderMultiSelect/setupMultiSelect above, but operates on the standalone
+// chartStageFilter variable instead of extraFilters, so it stays independent of the global filter.
+function renderChartStageFilter(){
+  const options = [...new Set(data.map(d => d.Stage).filter(Boolean))].sort((a,b) => stageRank(a) - stageRank(b));
+  if (chartStageFilter === null) chartStageFilter = [...options];
+  const container = document.getElementById('ms_chartStage');
+  const toggle = container.querySelector('.ms-toggle');
+  const optsWrap = container.querySelector('.ms-options');
+  const selected = chartStageFilter;
+  const sig = options.join('␟');
+  if (optsWrap.dataset.sig !== sig){
+    optsWrap.innerHTML = options.map(v => `<label><input type="checkbox" value="${escapeHtml(v)}"> ${escapeHtml(v)}</label>`).join('');
+    optsWrap.dataset.sig = sig;
+  }
+  optsWrap.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = selected.includes(cb.value); });
+  let label;
+  if (options.length && selected.length === options.length) label = 'All Stages';
+  else if (selected.length === 0) label = 'None selected';
+  else if (selected.length === 1) label = selected[0];
+  else label = `${selected.length} selected`;
+  toggle.textContent = label + ' ▾';
+}
+function setupChartStageFilter(){
+  const container = document.getElementById('ms_chartStage');
+  const toggle = container.querySelector('.ms-toggle');
+  const panel = container.querySelector('.ms-panel');
+  const optsWrap = container.querySelector('.ms-options');
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = panel.classList.contains('open');
+    document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+    if (!isOpen) panel.classList.add('open');
+  });
+  optsWrap.addEventListener('change', (e) => {
+    if (e.target.type !== 'checkbox') return;
+    chartStageFilter = [...optsWrap.querySelectorAll('input:checked')].map(cb => cb.value);
+    saveJSON(STORAGE_KEYS.chartStageFilter, chartStageFilter);
+    renderChart();
+    renderChartStageFilter();
+  });
+  panel.querySelectorAll('.ms-panel-actions a').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      chartStageFilter = a.dataset.act === 'all' ? null : [];
+      saveJSON(STORAGE_KEYS.chartStageFilter, chartStageFilter);
+      renderChart();
+      renderChartStageFilter();
+    });
+  });
+}
+
+// ================= Duration-bucket drill-down (click a Group/Stage row -> filter POC Detail) =====
+function updateDrillDownStatus(){
+  const statusEl = document.getElementById('drillDownStatus');
+  const clearBtn = document.getElementById('clearDrillDownBtn');
+  if (detailDrillDown){
+    const bucketLabel = { b060: '0–60 Days', b6190: '61–90 Days', b91: '91+ Days' }[detailDrillDown.bucket];
+    statusEl.textContent = `Drilled into: ${document.getElementById('groupFilter').value}${detailDrillDown.stage ? ' → ' + detailDrillDown.stage : ''} · ${bucketLabel}`;
+    statusEl.style.display = '';
+    clearBtn.style.display = '';
+  } else {
+    statusEl.style.display = 'none';
+    clearBtn.style.display = 'none';
+  }
+}
+function setupBucketDrillDown(){
+  ['bucket060Body','bucket6190Body','bucket91Body'].forEach(id => {
+    document.getElementById(id).addEventListener('click', (e) => {
+      const tr = e.target.closest('tr[data-bucket]');
+      if (!tr) return;
+      detailDrillDown = { bucket: tr.dataset.bucket, stage: tr.dataset.stage || null };
+      const groupFilterEl = document.getElementById('groupFilter');
+      if (groupFilterEl.dataset.built === '1') groupFilterEl.value = tr.dataset.group;
+      renderDetail();
+      updateDrillDownStatus();
+      document.getElementById('pocDetailSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+document.getElementById('clearDrillDownBtn').addEventListener('click', () => {
+  detailDrillDown = null;
+  document.getElementById('groupFilter').value = 'All Groups';
+  renderDetail();
+  updateDrillDownStatus();
+});
+document.getElementById('groupFilter').addEventListener('change', () => {
+  if (detailDrillDown) { detailDrillDown = null; updateDrillDownStatus(); }
+});
+
 // ================= Orchestration =================
 function refreshAll(){
   const computed = computeDataset();
@@ -824,8 +948,10 @@ function refreshAll(){
   renderGroupSummary();
   renderStageTable();
   renderBuckets();
+  renderChartStageFilter();
   renderChart();
   renderDetail();
+  updateDrillDownStatus();
 }
 
 // ================= Event wiring =================
@@ -915,6 +1041,8 @@ document.getElementById('clearMonthFilterBtn').addEventListener('click', () => {
   refreshAll();
 });
 ['country','pm','bdm','stage'].forEach(setupMultiSelect);
+setupChartStageFilter();
+setupBucketDrillDown();
 
 document.querySelectorAll('#detailTable th[data-key]').forEach(th => {
   th.addEventListener('click', () => {
