@@ -289,6 +289,7 @@
           <th data-key="Country">Country</th>
           <th data-key="Group">Group</th>
           <th data-key="Stage">Stage</th>
+          <th data-key="BookingDate">Booking Date</th>
           <th data-key="Validated">Validated Date</th>
           <th data-key="DurationEnd">End Date</th>
           <th data-key="DurationBasis">Basis</th>
@@ -720,6 +721,7 @@ function renderDetail(){
       <td>${d.Country}</td>
       <td><span class="group-pill ${groupClass(d.Group)}">${d.Group}</span></td>
       <td><span class="stage-pill">${d.Stage}</span></td>
+      <td>${d.Status === 'POC Booked' ? (d.BookingDate || '-') : '-'}</td>
       <td>${d.Validated || '-'}</td>
       <td>${d.DurationEnd || '-'}</td>
       <td><span class="basis ${basisClass(d.DurationBasis)}">${d.DurationBasis || '-'}</span></td>

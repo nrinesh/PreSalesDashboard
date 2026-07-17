@@ -10,6 +10,7 @@ A self-contained, interactive dashboard for tracking Proof-of-Concept (POC) pipe
 - Breaks POCs into duration buckets: 0–60 / 61–90 / 91+ days, grouped by stage and group.
 - Charts the 25 longest-running in-scope POCs (respects the whole-dashboard filters below).
 - **"Consider Booking Only On/After"** date picker: when a date is set, POC Booked records whose Sales Order Date is earlier than that date (or blank) are removed from the dashboard entirely.
+- **Booking Date column** in the POC Detail table: shows the Sales Order Date for POCs whose status is "POC Booked" (blank for all other POCs). The companion workbook mirrors this as a "POC Booking Date" formula column (col T) on the POC Data sheet.
 - Lets you **replace the data source** with a new `.xlsx` export directly in the browser (no rebuild needed).
 - Lets you **edit Validated Date / End Date** per POC via an Edit button — overrides are saved in the browser's local storage.
 - Lets you **filter the whole dashboard** by month (of Validated Date or End Date), and by Country, PM, BDM, and Stage — each supporting multiple selections at once via a checkbox dropdown.
