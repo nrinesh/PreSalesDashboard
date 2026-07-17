@@ -9,7 +9,7 @@ A self-contained, interactive dashboard for tracking Proof-of-Concept (POC) pipe
 - Tracks **Duration** as POC Validated Date → POC Standby Date (falling back to POC Completed Date, then a manual override, then today's date).
 - Breaks POCs into duration buckets: 0–60 / 61–90 / 91+ days, grouped by stage and group.
 - Charts the 25 longest-running in-scope POCs (respects the whole-dashboard filters below).
-- **"Consider Booking Only in 2026"** toggle button: when on, POC Booked records whose Sales Order Date is before 2026 (or blank) are removed from the dashboard entirely.
+- **"Consider Booking Only On/After"** date picker: when a date is set, POC Booked records whose Sales Order Date is earlier than that date (or blank) are removed from the dashboard entirely.
 - Lets you **replace the data source** with a new `.xlsx` export directly in the browser (no rebuild needed).
 - Lets you **edit Validated Date / End Date** per POC via an Edit button — overrides are saved in the browser's local storage.
 - Lets you **filter the whole dashboard** by month (of Validated Date or End Date), and by Country, PM, BDM, and Stage — each supporting multiple selections at once via a checkbox dropdown.
@@ -26,7 +26,7 @@ The "Replace Data Source" button expects an `.xlsx` export with these columns: `
 
 ## Notes
 
-- Manual date edits, filter selections, the booking-year toggle, and any replaced data source are stored in the browser's local storage, scoped to wherever this page is hosted/opened from. They do not sync across browsers or devices.
+- Manual date edits, filter selections, the booking-date filter, and any replaced data source are stored in the browser's local storage, scoped to wherever this page is hosted/opened from. They do not sync across browsers or devices.
 - To change which POC Statuses are excluded, or which stages roll up into which group, edit the `EXCLUDED_STATUSES` and `STAGE_TO_GROUP` constants near the top of the `<script>` block in `index.html`. Stage display order is controlled by the `STAGE_ORDER` constant right below it.
 - Each of the Country / PM / BDM / Stage filters defaults to "all selected" (no restriction). Unchecking values narrows the dashboard down to just those; clearing all boxes shows nothing for that dimension.
-- The companion `POC_Dashboard.xlsx` workbook mirrors the same grouping/stage-order/booking-year logic using an editable "Only Consider 2026+ Bookings? (Yes/No)" cell (Stage Summary!O3).
+- The companion `POC_Dashboard.xlsx` workbook mirrors the same grouping/stage-order/booking-date logic using an editable "Consider Booking Only On/After (date)" cell (Stage Summary!O3).

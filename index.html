@@ -166,7 +166,11 @@
     <span class="source-info" id="sourceInfo"></span>
   </div>
   <div class="toolbar-right">
-    <button id="bookingFilterBtn" class="btn btn-ghost">Consider Booking Only in 2026</button>
+    <label style="font-size:13px; color:var(--muted); display:flex; align-items:center; gap:6px;">
+      Consider Booking Only On/After
+      <input type="date" id="bookingDateFilterInput">
+    </label>
+    <button id="clearBookingDateBtn" class="btn btn-ghost btn-small">Clear</button>
     <button id="resetEditsBtn" class="btn btn-ghost">Reset All Manual Date Edits</button>
   </div>
 </div>
@@ -349,7 +353,7 @@ const STORAGE_KEYS = {
   overrides: 'pocDashboard.manualOverrides',
   monthFilter: 'pocDashboard.monthFilter',
   extraFilters: 'pocDashboard.extraFilters',
-  bookingFilter2026: 'pocDashboard.bookingFilter2026',
+  bookingDateFilter: 'pocDashboard.bookingDateFilter',
 };
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -376,9 +380,10 @@ let monthFilter = loadJSON(STORAGE_KEYS.monthFilter, { field: 'Validated', value
 let extraFilters = loadJSON(STORAGE_KEYS.extraFilters, { country: null, pm: null, bdm: null, stage: null });
 ['country','pm','bdm','stage'].forEach(k => { if (extraFilters[k] !== null && !Array.isArray(extraFilters[k])) extraFilters[k] = null; });
 let filterActive = { country: false, pm: false, bdm: false, stage: false };
-// When true, POC Booked records whose Sales Order (booking) date is before 2026 are removed
-// from the whole dashboard entirely (not just filtered from view).
-let bookingFilter2026 = loadJSON(STORAGE_KEYS.bookingFilter2026, false);
+// When set (an ISO 'YYYY-MM-DD' string), POC Booked records whose Sales Order (booking) date
+// is earlier than this date (or missing) are removed from the whole dashboard entirely --
+// not just filtered from view. Null means no restriction.
+let bookingDateFilter = loadJSON(STORAGE_KEYS.bookingDateFilter, null);
 
 // ================= Date helpers =================
 function fmtDate(v){
@@ -464,15 +469,15 @@ function inScope(records){
   return records.filter(d => !EXCLUDED_STATUSES.includes(d.Status));
 }
 
-// When the "Consider Booking Only in 2026" toggle is on, POC Booked records whose Sales Order
-// (booking) date is before 2026 are removed from scope entirely -- they don't just get hidden
-// by a filter, they're excluded the same way EXCLUDED_STATUSES excludes records. A POC Booked
-// record with no booking date on file is treated as not-yet-confirmed-2026 and excluded too.
-function applyBookingYearFilter(records){
-  if (!bookingFilter2026) return records;
+// When the "Consider Booking Only On/After" date is set, POC Booked records whose Sales Order
+// (booking) date is earlier than it are removed from scope entirely -- they don't just get
+// hidden by a filter, they're excluded the same way EXCLUDED_STATUSES excludes records. A POC
+// Booked record with no booking date on file is treated as not-yet-confirmed and excluded too.
+function applyBookingDateFilter(records){
+  if (!bookingDateFilter) return records;
   return records.filter(d => {
     if (d.Status !== 'POC Booked') return true;
-    return !!d.BookingDate && d.BookingDate.slice(0,4) >= '2026';
+    return !!d.BookingDate && d.BookingDate >= bookingDateFilter;
   });
 }
 
@@ -531,7 +536,7 @@ function renderCards(){
 }
 
 function hasActiveFilters(){
-  return !!monthFilter.value || filterActive.country || filterActive.pm || filterActive.bdm || filterActive.stage || bookingFilter2026;
+  return !!monthFilter.value || filterActive.country || filterActive.pm || filterActive.bdm || filterActive.stage || !!bookingDateFilter;
 }
 
 // ================= Render: group summary =================
@@ -797,7 +802,7 @@ function renderGlobalFilterOptions(){
 // ================= Orchestration =================
 function refreshAll(){
   const computed = computeDataset();
-  allInScope = applyBookingYearFilter(inScope(computed));
+  allInScope = applyBookingDateFilter(inScope(computed));
   data = applyExtraFilters(applyMonthFilter(allInScope));
 
   document.getElementById('sourceInfo').textContent = `Data source: ${sourceName}`;
@@ -808,11 +813,10 @@ function refreshAll(){
   if (filterActive.pm) parts.push(`PM = ${summarizeFilter(extraFilters.pm)}`);
   if (filterActive.bdm) parts.push(`BDM = ${summarizeFilter(extraFilters.bdm)}`);
   if (filterActive.stage) parts.push(`Stage = ${summarizeFilter(extraFilters.stage)}`);
-  if (bookingFilter2026) parts.push(`Booking Only in 2026 (POC Booked with a pre-2026 Sales Order Date removed)`);
+  if (bookingDateFilter) parts.push(`Booking Only On/After ${bookingDateFilter} (POC Booked with an earlier or missing Sales Order Date removed)`);
   document.getElementById('monthFilterStatus').textContent = parts.length ? `Active filters: ${parts.join(' · ')}` : 'No filters applied';
   document.getElementById('footerNote').textContent =
     `POC Dashboard — interactive view. Manual date edits, filter selections, and any replaced data source are saved in this browser's local storage for this file.`;
-  updateBookingFilterBtn();
 
   renderCards();
   renderGroupSummary();
@@ -875,19 +879,16 @@ document.getElementById('resetEditsBtn').addEventListener('click', () => {
   refreshAll();
 });
 
-function updateBookingFilterBtn(){
-  const btn = document.getElementById('bookingFilterBtn');
-  if (bookingFilter2026){
-    btn.textContent = 'Booking Only in 2026: ON (click to remove)';
-    btn.className = 'btn btn-primary';
-  } else {
-    btn.textContent = 'Consider Booking Only in 2026';
-    btn.className = 'btn btn-ghost';
-  }
-}
-document.getElementById('bookingFilterBtn').addEventListener('click', () => {
-  bookingFilter2026 = !bookingFilter2026;
-  saveJSON(STORAGE_KEYS.bookingFilter2026, bookingFilter2026);
+document.getElementById('bookingDateFilterInput').value = bookingDateFilter || '';
+document.getElementById('bookingDateFilterInput').addEventListener('change', (e) => {
+  bookingDateFilter = e.target.value || null;
+  saveJSON(STORAGE_KEYS.bookingDateFilter, bookingDateFilter);
+  refreshAll();
+});
+document.getElementById('clearBookingDateBtn').addEventListener('click', () => {
+  bookingDateFilter = null;
+  document.getElementById('bookingDateFilterInput').value = '';
+  saveJSON(STORAGE_KEYS.bookingDateFilter, bookingDateFilter);
   refreshAll();
 });
 
