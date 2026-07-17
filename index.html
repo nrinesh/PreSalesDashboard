@@ -150,17 +150,20 @@
 </div>
 
 <div class="section filter-bar">
-  <h2>Filter Whole Dashboard by Month</h2>
-  <div class="note">Filters every widget below to POCs whose selected date falls in the chosen month.</div>
+  <h2>Filter Whole Dashboard</h2>
+  <div class="note">Filters every widget below (cards, group/stage tables, duration buckets, chart, detail table) by month, country, PM, and/or BDM.</div>
   <div class="filters">
     <select id="monthFieldSelect">
       <option value="Validated">Month of Validated Date</option>
       <option value="DurationEnd">Month of End Date</option>
     </select>
     <input type="month" id="monthValueInput">
-    <button id="clearMonthFilterBtn" class="btn btn-ghost btn-small">Clear Filter</button>
-    <span class="source-info" id="monthFilterStatus"></span>
+    <select id="countryFilterGlobal"></select>
+    <select id="pmFilterGlobal"></select>
+    <select id="bdmFilterGlobal"></select>
+    <button id="clearMonthFilterBtn" class="btn btn-ghost btn-small">Clear All Filters</button>
   </div>
+  <div class="note" id="monthFilterStatus" style="margin-top:8px; margin-bottom:0;"></div>
 </div>
 
 <div class="cards" id="summaryCards"></div>
@@ -209,7 +212,7 @@
 
 <div class="section">
   <h2>POC Duration — Top 25 Longest Running</h2>
-  <div class="note">Duration = POC Validated Date &rarr; POC Standby Date (else POC Completed Date, else Manual Entry, else Current Date). Snapshot as of <span id="asOfDate"></span>. Showing the 25 longest of <span id="inScopeCount"></span> in-scope POCs (after the whole-dashboard month filter above).</div>
+  <div class="note">Duration = POC Validated Date &rarr; POC Standby Date (else POC Completed Date, else Manual Entry, else Current Date). Snapshot as of <span id="asOfDate"></span>. Showing the 25 longest of <span id="inScopeCount"></span> in-scope POCs (after the whole-dashboard filters above).</div>
   <div class="filters">
     <select id="chartStageFilter"></select>
   </div>
@@ -297,6 +300,7 @@ const STORAGE_KEYS = {
   sourceName: 'pocDashboard.sourceName',
   overrides: 'pocDashboard.manualOverrides',
   monthFilter: 'pocDashboard.monthFilter',
+  extraFilters: 'pocDashboard.extraFilters',
 };
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -316,6 +320,7 @@ let baseData = loadJSON(STORAGE_KEYS.source, BUNDLED_DATA);
 let sourceName = loadJSON(STORAGE_KEYS.sourceName, BUNDLED_SOURCE_NAME);
 let manualOverrides = loadJSON(STORAGE_KEYS.overrides, DEFAULT_OVERRIDES);
 let monthFilter = loadJSON(STORAGE_KEYS.monthFilter, { field: 'Validated', value: null });
+let extraFilters = loadJSON(STORAGE_KEYS.extraFilters, { country: 'All Countries', pm: 'All PMs', bdm: 'All BDMs' });
 let chartStageFilter = 'All Stages';
 
 // ================= Date helpers =================
@@ -405,9 +410,17 @@ function applyMonthFilter(records){
   });
 }
 
+function applyExtraFilters(records){
+  return records.filter(d =>
+    (extraFilters.country === 'All Countries' || d.Country === extraFilters.country) &&
+    (extraFilters.pm === 'All PMs' || d.PM === extraFilters.pm) &&
+    (extraFilters.bdm === 'All BDMs' || d.BDM === extraFilters.bdm)
+  );
+}
+
 // ================= Global state used by renderers =================
-let data = [];       // in-scope + month-filtered
-let allInScope = []; // in-scope, no month filter (used for "of N total")
+let data = [];       // in-scope + all whole-dashboard filters applied
+let allInScope = []; // in-scope, no filters (used for "of N total" and dropdown option lists)
 
 // ================= Render: cards =================
 function renderCards(){
@@ -418,7 +431,7 @@ function renderCards(){
   const stagesCount = new Set(data.map(d => d.Stage)).size;
 
   document.getElementById('subtitle').textContent =
-    `Grouping by POC Stage & duration visibility — as of ${todayStr()} — ${data.length} of ${baseData.length} POCs in scope${monthFilter.value ? ' (month filter active)' : ''}`;
+    `Grouping by POC Stage & duration visibility — as of ${todayStr()} — ${data.length} of ${baseData.length} POCs in scope${hasActiveFilters() ? ' (filters active)' : ''}`;
 
   const cardsEl = document.getElementById('summaryCards');
   const cards = [
@@ -432,6 +445,10 @@ function renderCards(){
       <div class="value">${c.value}</div>
       <div class="sub">${c.sub}</div>
     </div>`).join('');
+}
+
+function hasActiveFilters(){
+  return !!monthFilter.value || extraFilters.country !== 'All Countries' || extraFilters.pm !== 'All PMs' || extraFilters.bdm !== 'All BDMs';
 }
 
 // ================= Render: group summary =================
@@ -644,19 +661,44 @@ function renderDetail(){
     </tr>`).join('');
 }
 
+// ================= Global filter dropdowns (Country / PM / BDM) =================
+function buildSelectOptions(selectEl, values, allLabel){
+  const opts = [allLabel, ...values];
+  if (selectEl.dataset.built !== '1' || selectEl.options.length !== opts.length){
+    const current = selectEl.value || allLabel;
+    selectEl.innerHTML = opts.map(v => `<option value="${v}">${v}</option>`).join('');
+    selectEl.value = opts.includes(current) ? current : allLabel;
+    selectEl.dataset.built = '1';
+  }
+}
+function renderGlobalFilterOptions(){
+  const countries = [...new Set(allInScope.map(d => d.Country).filter(Boolean))].sort();
+  const pms = [...new Set(allInScope.map(d => d.PM).filter(Boolean))].sort();
+  const bdms = [...new Set(allInScope.map(d => d.BDM).filter(Boolean))].sort();
+  buildSelectOptions(document.getElementById('countryFilterGlobal'), countries, 'All Countries');
+  buildSelectOptions(document.getElementById('pmFilterGlobal'), pms, 'All PMs');
+  buildSelectOptions(document.getElementById('bdmFilterGlobal'), bdms, 'All BDMs');
+  document.getElementById('countryFilterGlobal').value = extraFilters.country;
+  document.getElementById('pmFilterGlobal').value = extraFilters.pm;
+  document.getElementById('bdmFilterGlobal').value = extraFilters.bdm;
+}
+
 // ================= Orchestration =================
 function refreshAll(){
   const computed = computeDataset();
   allInScope = inScope(computed);
-  data = applyMonthFilter(allInScope);
+  data = applyExtraFilters(applyMonthFilter(allInScope));
 
   document.getElementById('sourceInfo').textContent = `Data source: ${sourceName}`;
-  const status = document.getElementById('monthFilterStatus');
-  status.textContent = monthFilter.value
-    ? `Active: ${monthFilter.field === 'Validated' ? 'Validated Date' : 'End Date'} = ${monthFilter.value}`
-    : 'No month filter applied';
+  renderGlobalFilterOptions();
+  const parts = [];
+  if (monthFilter.value) parts.push(`${monthFilter.field === 'Validated' ? 'Validated Date' : 'End Date'} month = ${monthFilter.value}`);
+  if (extraFilters.country !== 'All Countries') parts.push(`Country = ${extraFilters.country}`);
+  if (extraFilters.pm !== 'All PMs') parts.push(`PM = ${extraFilters.pm}`);
+  if (extraFilters.bdm !== 'All BDMs') parts.push(`BDM = ${extraFilters.bdm}`);
+  document.getElementById('monthFilterStatus').textContent = parts.length ? `Active filters: ${parts.join(' · ')}` : 'No filters applied';
   document.getElementById('footerNote').textContent =
-    `POC Dashboard — interactive view. Manual date edits and any replaced data source are saved in this browser's local storage for this file.`;
+    `POC Dashboard — interactive view. Manual date edits, filter selections, and any replaced data source are saved in this browser's local storage for this file.`;
 
   renderCards();
   renderGroupSummary();
@@ -688,6 +730,11 @@ document.getElementById('sourceFileInput').addEventListener('change', (e) => {
       sourceName = file.name;
       saveJSON(STORAGE_KEYS.source, baseData);
       saveJSON(STORAGE_KEYS.sourceName, sourceName);
+      document.getElementById('countryFilterGlobal').dataset.built = '0';
+      document.getElementById('pmFilterGlobal').dataset.built = '0';
+      document.getElementById('bdmFilterGlobal').dataset.built = '0';
+      document.getElementById('stageFilter').dataset.built = '0';
+      document.getElementById('chartStageFilter').dataset.built = '0';
       refreshAll();
     } catch(err){
       alert('Could not read that file as an Excel workbook: ' + err.message);
@@ -703,6 +750,11 @@ document.getElementById('revertSourceBtn').addEventListener('click', () => {
   sourceName = BUNDLED_SOURCE_NAME;
   localStorage.removeItem(STORAGE_KEYS.source);
   localStorage.removeItem(STORAGE_KEYS.sourceName);
+  document.getElementById('countryFilterGlobal').dataset.built = '0';
+  document.getElementById('pmFilterGlobal').dataset.built = '0';
+  document.getElementById('bdmFilterGlobal').dataset.built = '0';
+  document.getElementById('stageFilter').dataset.built = '0';
+  document.getElementById('chartStageFilter').dataset.built = '0';
   refreshAll();
 });
 
@@ -725,10 +777,27 @@ document.getElementById('monthValueInput').addEventListener('change', (e) => {
   saveJSON(STORAGE_KEYS.monthFilter, monthFilter);
   refreshAll();
 });
+document.getElementById('countryFilterGlobal').addEventListener('change', (e) => {
+  extraFilters.country = e.target.value;
+  saveJSON(STORAGE_KEYS.extraFilters, extraFilters);
+  refreshAll();
+});
+document.getElementById('pmFilterGlobal').addEventListener('change', (e) => {
+  extraFilters.pm = e.target.value;
+  saveJSON(STORAGE_KEYS.extraFilters, extraFilters);
+  refreshAll();
+});
+document.getElementById('bdmFilterGlobal').addEventListener('change', (e) => {
+  extraFilters.bdm = e.target.value;
+  saveJSON(STORAGE_KEYS.extraFilters, extraFilters);
+  refreshAll();
+});
 document.getElementById('clearMonthFilterBtn').addEventListener('click', () => {
   monthFilter.value = null;
+  extraFilters = { country: 'All Countries', pm: 'All PMs', bdm: 'All BDMs' };
   document.getElementById('monthValueInput').value = '';
   saveJSON(STORAGE_KEYS.monthFilter, monthFilter);
+  saveJSON(STORAGE_KEYS.extraFilters, extraFilters);
   refreshAll();
 });
 
