@@ -224,6 +224,15 @@
 <div class="section">
   <h2>POC Grouping by Group</h2>
   <div class="note" id="groupNote"></div>
+  <div class="filters" style="margin-bottom:14px;">
+    <div class="multiselect" id="ms_groupCountry">
+      <button type="button" class="ms-toggle">All Countries &#9662;</button>
+      <div class="ms-panel">
+        <div class="ms-panel-actions"><a href="#" data-act="all">Select all</a><a href="#" data-act="none">Clear</a></div>
+        <div class="ms-options"></div>
+      </div>
+    </div>
+  </div>
   <div class="group-summary-grid" id="groupCards"></div>
   <div class="table-wrap" style="margin-top:14px;">
     <table id="groupTable">
@@ -265,10 +274,17 @@
 
 <div class="section">
   <h2>POC Duration — Top 25 Longest Running</h2>
-  <div class="note">Duration = POC Validated Date &rarr; POC Standby Date (else POC Completed Date, else Manual Entry, else Current Date). Snapshot as of <span id="asOfDate"></span>. Showing the 25 longest of <span id="inScopeCount"></span> in-scope POCs (after all whole-dashboard filters above). Use the Stage filter below to narrow this chart only, without affecting the rest of the dashboard.</div>
+  <div class="note">Duration = POC Validated Date &rarr; POC Standby Date (else POC Completed Date, else Manual Entry, else Current Date). Snapshot as of <span id="asOfDate"></span>. Showing the 25 longest of <span id="inScopeCount"></span> in-scope POCs (after all whole-dashboard filters above). Use the Stage/Country filters below to narrow this chart only, without affecting the rest of the dashboard.</div>
   <div class="filters" style="margin-bottom:14px;">
     <div class="multiselect" id="ms_chartStage">
       <button type="button" class="ms-toggle">All Stages &#9662;</button>
+      <div class="ms-panel">
+        <div class="ms-panel-actions"><a href="#" data-act="all">Select all</a><a href="#" data-act="none">Clear</a></div>
+        <div class="ms-options"></div>
+      </div>
+    </div>
+    <div class="multiselect" id="ms_chartCountry">
+      <button type="button" class="ms-toggle">All Countries &#9662;</button>
       <div class="ms-panel">
         <div class="ms-panel-actions"><a href="#" data-act="all">Select all</a><a href="#" data-act="none">Clear</a></div>
         <div class="ms-options"></div>
@@ -289,6 +305,13 @@
   <div class="filters">
     <select id="groupFilter"></select>
     <input type="text" id="searchBox" placeholder="Search project, customer, country...">
+    <div class="multiselect" id="ms_detailCountry">
+      <button type="button" class="ms-toggle">All Countries &#9662;</button>
+      <div class="ms-panel">
+        <div class="ms-panel-actions"><a href="#" data-act="all">Select all</a><a href="#" data-act="none">Clear</a></div>
+        <div class="ms-options"></div>
+      </div>
+    </div>
     <span class="note" id="drillDownStatus" style="display:none; margin:0;"></span>
     <button id="clearDrillDownBtn" class="btn btn-ghost btn-small" style="display:none;">Clear Drill-down</button>
   </div>
@@ -369,6 +392,9 @@ const STORAGE_KEYS = {
   extraFilters: 'pocDashboard.extraFilters',
   bookingDateFilter: 'pocDashboard.bookingDateFilter',
   chartStageFilter: 'pocDashboard.chartStageFilter',
+  chartCountryFilter: 'pocDashboard.chartCountryFilter',
+  detailCountryFilter: 'pocDashboard.detailCountryFilter',
+  groupCountryFilter: 'pocDashboard.groupCountryFilter',
 };
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -404,6 +430,12 @@ let bookingDateFilter = loadJSON(STORAGE_KEYS.bookingDateFilter, null);
 // narrows just the chart without affecting cards, group/stage tables, buckets, or detail table.
 // null = not yet initialized (defaults to "all" once options are known); array = explicit selection.
 let chartStageFilter = loadJSON(STORAGE_KEYS.chartStageFilter, null);
+// Widget-local Country filters, same idea as chartStageFilter above but for Country and for three
+// different widgets: the Top 25 chart, the POC Detail table, and the POC Grouping by Group summary.
+// Each is independent of extraFilters.country and of each other.
+let chartCountryFilter = loadJSON(STORAGE_KEYS.chartCountryFilter, null);
+let detailCountryFilter = loadJSON(STORAGE_KEYS.detailCountryFilter, null);
+let groupCountryFilter = loadJSON(STORAGE_KEYS.groupCountryFilter, null);
 // Transient (not persisted) drill-down set by clicking a Group/Stage row inside a duration-bucket
 // widget. Filters the POC Detail table to just that duration bucket (+ stage, if a stage row was
 // clicked); the Group is applied via the existing groupFilter dropdown. Cleared via the
@@ -567,11 +599,13 @@ function hasActiveFilters(){
 // ================= Render: group summary =================
 function renderGroupSummary(){
   document.getElementById('groupNote').textContent =
-    `POC Closed = POC Sign Off + POC Standby. POC Open = POC Kicked Off + POC Integration Phase + POC Assessment/Validation. POC Booked = each POC whose POC Status is "POC Booked", shown under its own stage regardless of underlying stage. Excludes POCs whose POC Status is: ${EXCLUDED_STATUSES.join(', ')}.`;
+    `POC Closed = POC Sign Off + POC Standby. POC Open = POC Kicked Off + POC Integration Phase + POC Assessment/Validation. POC Booked = each POC whose POC Status is "POC Booked", shown under its own stage regardless of underlying stage. Excludes POCs whose POC Status is: ${EXCLUDED_STATUSES.join(', ')}. Use the Country filter below to narrow this widget only, without affecting the rest of the dashboard.`;
 
+  // Widget-local Country filter narrows just this widget's pool, on top of the whole-dashboard `data`.
+  const groupScoped = data.filter(d => matchesMulti(d.Country, groupCountryFilter));
   const groupMap = {};
   GROUP_ORDER.forEach(g => groupMap[g] = []);
-  data.forEach(d => { if (groupMap[d.Group]) groupMap[d.Group].push(d.DurationDays); });
+  groupScoped.forEach(d => { if (groupMap[d.Group]) groupMap[d.Group].push(d.DurationDays); });
 
   document.getElementById('groupCards').innerHTML = GROUP_ORDER.map(g => {
     const durs = groupMap[g];
@@ -668,7 +702,7 @@ let durationChartInstance = null;
 function renderChart(){
   document.getElementById('asOfDate').textContent = todayStr();
   // Widget-local Stage filter narrows just this chart's pool, on top of the whole-dashboard `data`.
-  const chartScoped = data.filter(d => matchesMulti(d.Stage, chartStageFilter));
+  const chartScoped = data.filter(d => matchesMulti(d.Stage, chartStageFilter) && matchesMulti(d.Country, chartCountryFilter));
   document.getElementById('inScopeCount').textContent = chartScoped.length;
 
   const sorted = [...chartScoped].sort((a,b) => b.DurationDays - a.DurationDays).slice(0, 25);
@@ -723,6 +757,8 @@ function renderDetail(){
   const groupVal = groupFilterEl.value;
   const q = document.getElementById('searchBox').value.toLowerCase();
   let rows = data.filter(d => (groupVal === 'All Groups' || d.Group === groupVal));
+  // Widget-local Country filter narrows just this table, on top of the whole-dashboard `data`.
+  rows = rows.filter(d => matchesMulti(d.Country, detailCountryFilter));
   // Duration-bucket drill-down (set by clicking a Group/Stage row in the bucket widgets above):
   // narrows further to just that duration bucket, and to a specific stage if a stage row was clicked.
   if (detailDrillDown) {
@@ -887,6 +923,80 @@ function setupChartStageFilter(){
   });
 }
 
+// ================= Generic widget-local Country filter helper =================
+// Same idea as renderChartStageFilter/setupChartStageFilter above, generalized so it can back
+// three independent Country filters (Top 25 chart, POC Detail, POC Grouping by Group) without
+// copy-pasting the same multiselect wiring three times. getValue/setValue read/write whichever
+// backing variable (chartCountryFilter / detailCountryFilter / groupCountryFilter) this instance
+// controls; storageKey persists it; onChange re-renders the owning widget.
+function renderLocalCountryFilter(elId, getValue, setValue){
+  const options = [...new Set(data.map(d => d.Country).filter(Boolean))].sort();
+  if (getValue() === null) setValue([...options]);
+  const container = document.getElementById(elId);
+  const toggle = container.querySelector('.ms-toggle');
+  const optsWrap = container.querySelector('.ms-options');
+  const selected = getValue();
+  const sig = options.join('␟');
+  if (optsWrap.dataset.sig !== sig){
+    optsWrap.innerHTML = options.map(v => `<label><input type="checkbox" value="${escapeHtml(v)}"> ${escapeHtml(v)}</label>`).join('');
+    optsWrap.dataset.sig = sig;
+  }
+  optsWrap.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = selected.includes(cb.value); });
+  let label;
+  if (options.length && selected.length === options.length) label = 'All Countries';
+  else if (selected.length === 0) label = 'None selected';
+  else if (selected.length === 1) label = selected[0];
+  else label = `${selected.length} selected`;
+  toggle.textContent = label + ' ▾';
+}
+function setupLocalCountryFilter(elId, getValue, setValue, storageKey, onChange){
+  const container = document.getElementById(elId);
+  const toggle = container.querySelector('.ms-toggle');
+  const panel = container.querySelector('.ms-panel');
+  const optsWrap = container.querySelector('.ms-options');
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = panel.classList.contains('open');
+    document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+    if (!isOpen) panel.classList.add('open');
+  });
+  optsWrap.addEventListener('change', (e) => {
+    if (e.target.type !== 'checkbox') return;
+    setValue([...optsWrap.querySelectorAll('input:checked')].map(cb => cb.value));
+    saveJSON(storageKey, getValue());
+    onChange();
+  });
+  panel.querySelectorAll('.ms-panel-actions a').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      setValue(a.dataset.act === 'all' ? null : []);
+      saveJSON(storageKey, getValue());
+      onChange();
+    });
+  });
+}
+function renderChartCountryFilter(){
+  renderLocalCountryFilter('ms_chartCountry', () => chartCountryFilter, v => { chartCountryFilter = v; });
+}
+function setupChartCountryFilter(){
+  setupLocalCountryFilter('ms_chartCountry', () => chartCountryFilter, v => { chartCountryFilter = v; }, STORAGE_KEYS.chartCountryFilter,
+    () => { renderChart(); renderChartCountryFilter(); });
+}
+function renderDetailCountryFilter(){
+  renderLocalCountryFilter('ms_detailCountry', () => detailCountryFilter, v => { detailCountryFilter = v; });
+}
+function setupDetailCountryFilter(){
+  setupLocalCountryFilter('ms_detailCountry', () => detailCountryFilter, v => { detailCountryFilter = v; }, STORAGE_KEYS.detailCountryFilter,
+    () => { renderDetail(); renderDetailCountryFilter(); });
+}
+function renderGroupCountryFilter(){
+  renderLocalCountryFilter('ms_groupCountry', () => groupCountryFilter, v => { groupCountryFilter = v; });
+}
+function setupGroupCountryFilter(){
+  setupLocalCountryFilter('ms_groupCountry', () => groupCountryFilter, v => { groupCountryFilter = v; }, STORAGE_KEYS.groupCountryFilter,
+    () => { renderGroupSummary(); renderGroupCountryFilter(); });
+}
+
 // ================= Duration-bucket drill-down (click a Group/Stage row -> filter POC Detail) =====
 function updateDrillDownStatus(){
   const statusEl = document.getElementById('drillDownStatus');
@@ -945,11 +1055,14 @@ function refreshAll(){
     `POC Dashboard — interactive view. Manual date edits, filter selections, and any replaced data source are saved in this browser's local storage for this file.`;
 
   renderCards();
+  renderGroupCountryFilter();
   renderGroupSummary();
   renderStageTable();
   renderBuckets();
   renderChartStageFilter();
+  renderChartCountryFilter();
   renderChart();
+  renderDetailCountryFilter();
   renderDetail();
   updateDrillDownStatus();
 }
@@ -1042,6 +1155,9 @@ document.getElementById('clearMonthFilterBtn').addEventListener('click', () => {
 });
 ['country','pm','bdm','stage'].forEach(setupMultiSelect);
 setupChartStageFilter();
+setupChartCountryFilter();
+setupDetailCountryFilter();
+setupGroupCountryFilter();
 setupBucketDrillDown();
 
 document.querySelectorAll('#detailTable th[data-key]').forEach(th => {
