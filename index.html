@@ -257,9 +257,16 @@
 
 <div class="section">
   <h2>Average Duration by PM</h2>
-  <div class="note">Avg/Max Duration (Validated &rarr; End Date) per Project Manager, based on the current whole-dashboard filters. Excludes POC Booked. Click a column header to sort. Click a row to filter POC Detail below to just that PM and scroll there.</div>
+  <div class="note">Avg/Max Duration (Validated &rarr; End Date) per Project Manager, based on the current whole-dashboard filters. Excludes POC Booked. Use the Stage filter below to narrow this table only, without affecting the rest of the dashboard. Click a column header to sort. Click a row to filter POC Detail below to just that PM and scroll there.</div>
   <div class="filters" style="margin-bottom:14px;">
     <input type="text" id="pmTableSearch" placeholder="Search PM...">
+    <div class="multiselect" id="ms_pmTableStage">
+      <button type="button" class="ms-toggle">All Stages &#9662;</button>
+      <div class="ms-panel">
+        <div class="ms-panel-actions"><a href="#" data-act="all">Select all</a><a href="#" data-act="none">Clear</a></div>
+        <div class="ms-options"></div>
+      </div>
+    </div>
   </div>
   <div class="table-wrap">
     <table id="pmTable">
@@ -273,9 +280,16 @@
 
 <div class="section">
   <h2>Average Duration by Country</h2>
-  <div class="note">Avg/Max Duration (Validated &rarr; End Date) per Country, based on the current whole-dashboard filters. Excludes POC Booked. Click a column header to sort. Click a row to filter POC Detail below to just that Country and scroll there.</div>
+  <div class="note">Avg/Max Duration (Validated &rarr; End Date) per Country, based on the current whole-dashboard filters. Excludes POC Booked. Use the Stage filter below to narrow this table only, without affecting the rest of the dashboard. Click a column header to sort. Click a row to filter POC Detail below to just that Country and scroll there.</div>
   <div class="filters" style="margin-bottom:14px;">
     <input type="text" id="countryTableSearch" placeholder="Search Country...">
+    <div class="multiselect" id="ms_countryTableStage">
+      <button type="button" class="ms-toggle">All Stages &#9662;</button>
+      <div class="ms-panel">
+        <div class="ms-panel-actions"><a href="#" data-act="all">Select all</a><a href="#" data-act="none">Clear</a></div>
+        <div class="ms-options"></div>
+      </div>
+    </div>
   </div>
   <div class="table-wrap">
     <table id="countryTable">
@@ -429,6 +443,8 @@ const STORAGE_KEYS = {
   chartCountryFilter: 'pocDashboard.chartCountryFilter',
   detailCountryFilter: 'pocDashboard.detailCountryFilter',
   groupCountryFilter: 'pocDashboard.groupCountryFilter',
+  pmTableStageFilter: 'pocDashboard.pmTableStageFilter',
+  countryTableStageFilter: 'pocDashboard.countryTableStageFilter',
 };
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -470,6 +486,12 @@ let chartStageFilter = loadJSON(STORAGE_KEYS.chartStageFilter, null);
 let chartCountryFilter = loadJSON(STORAGE_KEYS.chartCountryFilter, null);
 let detailCountryFilter = loadJSON(STORAGE_KEYS.detailCountryFilter, null);
 let groupCountryFilter = loadJSON(STORAGE_KEYS.groupCountryFilter, null);
+// Widget-local Stage filters for the Average Duration by PM / by Country tables. Same idea as
+// chartStageFilter/the Country filters above, but for Stage and scoped to each of these two
+// tables independently -- narrows that table's own aggregation only, without affecting the rest
+// of the dashboard (including the other of the two tables).
+let pmTableStageFilter = loadJSON(STORAGE_KEYS.pmTableStageFilter, null);
+let countryTableStageFilter = loadJSON(STORAGE_KEYS.countryTableStageFilter, null);
 // Transient (not persisted) drill-down set by clicking a row in a duration-bucket widget, or in
 // the Average Duration by PM / by Country tables. Filters the POC Detail table to whichever of
 // bucket/stage/pm/country was set by that click (Group is applied via the groupFilter dropdown
@@ -705,8 +727,10 @@ function renderAggTable(field, tableId, searchInputId){
   const map = {};
   // POC Booked records are excluded from these two breakdowns -- a booking date isn't the same
   // kind of "duration" as time spent in the open/closed stages, so it would skew the PM/Country
-  // averages.
-  data.filter(d => d.Group !== 'POC Booked').forEach(d => {
+  // averages. Each table also has its own widget-local Stage filter (independent of the global
+  // Filter Whole Dashboard stage filter and of the other table's Stage filter).
+  const stageFilter = field === 'PM' ? pmTableStageFilter : countryTableStageFilter;
+  data.filter(d => d.Group !== 'POC Booked' && matchesMulti(d.Stage, stageFilter)).forEach(d => {
     const key = d[field] || '(none)';
     (map[key] = map[key] || []).push(d.DurationDays);
   });
@@ -1105,6 +1129,72 @@ function setupGroupCountryFilter(){
     () => { renderGroupSummary(); renderGroupCountryFilter(); });
 }
 
+// ================= Generic widget-local Stage filter helper =================
+// Same idea as renderLocalCountryFilter/setupLocalCountryFilter above, but for Stage (options
+// sorted via stageRank, like the chart's Stage filter, instead of alphabetically). Backs the
+// Average Duration by PM / by Country tables' Stage filters, each independent of extraFilters.stage,
+// chartStageFilter, and each other.
+function renderLocalStageFilter(elId, getValue, setValue){
+  const options = [...new Set(data.map(d => d.Stage).filter(Boolean))].sort((a,b) => stageRank(a) - stageRank(b));
+  if (getValue() === null) setValue([...options]);
+  const container = document.getElementById(elId);
+  const toggle = container.querySelector('.ms-toggle');
+  const optsWrap = container.querySelector('.ms-options');
+  const selected = getValue();
+  const sig = options.join('␟');
+  if (optsWrap.dataset.sig !== sig){
+    optsWrap.innerHTML = options.map(v => `<label><input type="checkbox" value="${escapeHtml(v)}"> ${escapeHtml(v)}</label>`).join('');
+    optsWrap.dataset.sig = sig;
+  }
+  optsWrap.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = selected.includes(cb.value); });
+  let label;
+  if (options.length && selected.length === options.length) label = 'All Stages';
+  else if (selected.length === 0) label = 'None selected';
+  else if (selected.length === 1) label = selected[0];
+  else label = `${selected.length} selected`;
+  toggle.textContent = label + ' ▾';
+}
+function setupLocalStageFilter(elId, getValue, setValue, storageKey, onChange){
+  const container = document.getElementById(elId);
+  const toggle = container.querySelector('.ms-toggle');
+  const panel = container.querySelector('.ms-panel');
+  const optsWrap = container.querySelector('.ms-options');
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = panel.classList.contains('open');
+    document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+    if (!isOpen) panel.classList.add('open');
+  });
+  optsWrap.addEventListener('change', (e) => {
+    if (e.target.type !== 'checkbox') return;
+    setValue([...optsWrap.querySelectorAll('input:checked')].map(cb => cb.value));
+    saveJSON(storageKey, getValue());
+    onChange();
+  });
+  panel.querySelectorAll('.ms-panel-actions a').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      setValue(a.dataset.act === 'all' ? null : []);
+      saveJSON(storageKey, getValue());
+      onChange();
+    });
+  });
+}
+function renderPmTableStageFilter(){
+  renderLocalStageFilter('ms_pmTableStage', () => pmTableStageFilter, v => { pmTableStageFilter = v; });
+}
+function setupPmTableStageFilter(){
+  setupLocalStageFilter('ms_pmTableStage', () => pmTableStageFilter, v => { pmTableStageFilter = v; }, STORAGE_KEYS.pmTableStageFilter,
+    () => { renderAggTable('PM', 'pmTable', 'pmTableSearch'); renderPmTableStageFilter(); });
+}
+function renderCountryTableStageFilter(){
+  renderLocalStageFilter('ms_countryTableStage', () => countryTableStageFilter, v => { countryTableStageFilter = v; });
+}
+function setupCountryTableStageFilter(){
+  setupLocalStageFilter('ms_countryTableStage', () => countryTableStageFilter, v => { countryTableStageFilter = v; }, STORAGE_KEYS.countryTableStageFilter,
+    () => { renderAggTable('Country', 'countryTable', 'countryTableSearch'); renderCountryTableStageFilter(); });
+}
+
 // ================= Drill-down to POC Detail (click a row in a bucket widget or PM/Country table) =
 function updateDrillDownStatus(){
   const statusEl = document.getElementById('drillDownStatus');
@@ -1172,6 +1262,8 @@ function refreshAll(){
   renderGroupCountryFilter();
   renderGroupSummary();
   renderStageTable();
+  renderPmTableStageFilter();
+  renderCountryTableStageFilter();
   renderAggTable('PM', 'pmTable', 'pmTableSearch');
   renderAggTable('Country', 'countryTable', 'countryTableSearch');
   renderBuckets();
@@ -1275,6 +1367,8 @@ setupChartCountryFilter();
 setupDetailCountryFilter();
 setupGroupCountryFilter();
 setupBucketDrillDown();
+setupPmTableStageFilter();
+setupCountryTableStageFilter();
 setupAggTable('PM', 'pmTable', 'pmTableSearch');
 setupAggTable('Country', 'countryTable', 'countryTableSearch');
 
